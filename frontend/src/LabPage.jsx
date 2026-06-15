@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CornerDownLeft, LayoutPanelLeft } from "lucide-react";
+import { CornerDownLeft, LayoutPanelLeft, MonitorUp } from "lucide-react";
 import { payloadGroups } from "./payloads";
 
 const floatingPayloads = [
@@ -63,10 +63,16 @@ function LabPage({ navigate }) {
 
   return (
     <main className="shell">
-      <button className="route-button" type="button" onClick={() => navigate("admin")}>
-        <LayoutPanelLeft size={18} />
-        <span>Admin</span>
-      </button>
+      <div className="route-stack">
+        <button className="route-button" type="button" onClick={() => navigate("practice")}>
+          <MonitorUp size={18} />
+          <span>Practice</span>
+        </button>
+        <button className="route-button" type="button" onClick={() => navigate("admin")}>
+          <LayoutPanelLeft size={18} />
+          <span>Admin</span>
+        </button>
+      </div>
       <div className="ambient ambient-a" />
       <div className="ambient ambient-b" />
       {floatingPayloads.map((payload) => (

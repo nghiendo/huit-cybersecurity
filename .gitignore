@@ -220,6 +220,7 @@ __marimo__/
 # Project-specific runtime output
 backend/data/*.sqlite
 backend/data/*.sqlite-journal
+backend/data/*.log
 backend/__pycache__/
 backend/app/__pycache__/
 frontend/node_modules/

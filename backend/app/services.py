@@ -1,4 +1,32 @@
 from html import escape
+from pathlib import Path
+
+ADMIN_TABLE_CONFIG = {
+    "users": {
+        "table": "users",
+        "columns": "id, username, password, role",
+        "order_by": "id DESC",
+    },
+    "comments": {
+        "table": "comments",
+        "columns": "id, author, content, created_at",
+        "order_by": "id DESC",
+    },
+    "labLogs": {
+        "table": "lab_logs",
+        "columns": """
+            id,
+            input,
+            detected_type,
+            blocked,
+            model_score,
+            model_time_ms,
+            endpoint_time_ms,
+            created_at
+        """,
+        "order_by": "id DESC",
+    },
+}
 
 from app.database import get_connection
 
@@ -95,38 +123,40 @@ def write_lab_log(
         conn.commit()
 
 
-def fetch_admin_data(limit: int = 50) -> dict:
+def fetch_admin_table(resource: str, limit: int = 25, offset: int = 0) -> dict:
+    if resource not in ADMIN_TABLE_CONFIG:
+        raise ValueError(f"Unsupported resource: {resource}")
+
+    config = ADMIN_TABLE_CONFIG[resource]
+    query = """
+        SELECT
+            {columns}
+        FROM {table}
+        ORDER BY {order_by}
+        LIMIT ? OFFSET ?
+    """.format(
+        columns=config["columns"],
+        table=config["table"],
+        order_by=config["order_by"],
+    )
+
     with get_connection() as conn:
-        users = conn.execute(
-            "SELECT id, username, password, role FROM users ORDER BY id ASC LIMIT ?",
-            (limit,),
-        ).fetchall()
-        comments = conn.execute(
-            "SELECT id, author, content, created_at FROM comments ORDER BY id DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
-        logs = conn.execute(
-            """
-            SELECT
-                id,
-                input,
-                detected_type,
-                blocked,
-                model_score,
-                model_time_ms,
-                endpoint_time_ms,
-                created_at
-            FROM lab_logs
-            ORDER BY id DESC
-            LIMIT ?
-            """,
-            (limit,),
-        ).fetchall()
+        total = conn.execute(f"SELECT COUNT(*) FROM {config['table']}").fetchone()[0]
+        rows = conn.execute(query, (limit, offset)).fetchall()
 
     return {
-        "users": [dict(row) for row in users],
-        "comments": [dict(row) for row in comments],
-        "labLogs": [dict(row) for row in logs],
+        "resource": resource,
+        "rows": [dict(row) for row in rows],
+        "pagination": {
+            "total": int(total),
+            "limit": int(limit),
+            "offset": int(offset),
+            "returned": len(rows),
+            "hasPrevious": offset > 0,
+            "hasNext": offset + len(rows) < int(total),
+            "page": (offset // limit) + 1 if limit else 1,
+            "pageCount": ((int(total) - 1) // limit) + 1 if total and limit else 1,
+        },
     }
 
 
@@ -172,3 +202,11 @@ def summarize_admin_data() -> dict:
             "avgModelTimeMs": avg_model_time_ms,
         },
     }
+
+
+def read_terminal_log_tail(path: Path, max_lines: int = 250) -> str:
+    if not path.exists():
+        return ""
+
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    return "\n".join(lines[-max_lines:])

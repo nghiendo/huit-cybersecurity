@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BarChart3,
   BrainCircuit,
@@ -7,7 +7,8 @@ import {
   RefreshCw,
   Shield,
   ShieldCheck,
-  Sparkles
+  Sparkles,
+  TerminalSquare
 } from "lucide-react";
 
 const tabs = [
@@ -15,17 +16,24 @@ const tabs = [
   { id: "controls", label: "Controls", icon: Shield },
   { id: "users", label: "Users", icon: Database },
   { id: "comments", label: "Comments", icon: Sparkles },
-  { id: "logs", label: "Logs", icon: BrainCircuit }
+  { id: "logs", label: "Logs", icon: BrainCircuit },
+  { id: "terminal", label: "Terminal", icon: TerminalSquare }
 ];
 
 function AdminPage({ navigate }) {
   const [activeTab, setActiveTab] = useState("overview");
   const [settings, setSettings] = useState(null);
   const [stats, setStats] = useState(null);
-  const [dataSnapshot, setDataSnapshot] = useState(null);
+  const [tableState, setTableState] = useState({
+    resource: "users",
+    rows: [],
+    pagination: null
+  });
   const [loading, setLoading] = useState(true);
+  const [tableLoading, setTableLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [terminalOutput, setTerminalOutput] = useState("backend-terminal> awaiting_stream");
   const adminToken = new URLSearchParams(window.location.search).get("token") ?? "";
 
   useEffect(() => {
@@ -34,10 +42,73 @@ function AdminPage({ navigate }) {
       setLoading(false);
       return;
     }
-    void loadAdminPanel();
+    void loadAdminPanel("users", 0);
   }, [adminToken]);
 
-  async function loadAdminPanel() {
+  useEffect(() => {
+    if (!adminToken) {
+      return;
+    }
+
+    if (activeTab === "users" || activeTab === "comments" || activeTab === "logs") {
+      const resource = activeTab === "logs" ? "labLogs" : activeTab;
+      void loadAdminTable(resource, 0);
+    }
+  }, [activeTab, adminToken]);
+
+  useEffect(() => {
+    if (!adminToken || activeTab !== "terminal") {
+      return undefined;
+    }
+
+    let isMounted = true;
+    let socket;
+
+    async function loadTerminalSnapshot() {
+      try {
+        const response = await fetch(`/api/admin/terminal?token=${encodeURIComponent(adminToken)}`);
+        if (!response.ok) {
+          throw new Error("Terminal snapshot failed");
+        }
+
+        const payload = await response.json();
+        if (isMounted) {
+          setTerminalOutput(payload.output || "backend-terminal> no_output_yet");
+        }
+      } catch {
+        if (isMounted) {
+          setTerminalOutput("backend-terminal> snapshot_unavailable");
+        }
+      }
+
+      const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+      socket = new WebSocket(
+        `${protocol}://${window.location.host}/api/admin/terminal-ws?token=${encodeURIComponent(adminToken)}`
+      );
+      socket.onmessage = (event) => {
+        if (!isMounted) {
+          return;
+        }
+
+        setTerminalOutput((current) => {
+          const next = current ? `${current}\n${event.data}` : event.data;
+          const lines = next.split("\n");
+          return lines.slice(-250).join("\n");
+        });
+      };
+    }
+
+    void loadTerminalSnapshot();
+
+    return () => {
+      isMounted = false;
+      if (socket) {
+        socket.close();
+      }
+    };
+  }, [activeTab, adminToken]);
+
+  async function loadAdminPanel(defaultResource, defaultOffset) {
     if (!adminToken) {
       return;
     }
@@ -46,29 +117,53 @@ function AdminPage({ navigate }) {
     setError("");
 
     try {
-      const [settingsResponse, statsResponse, dataResponse] = await Promise.all([
+      const [settingsResponse, statsResponse] = await Promise.all([
         fetch(`/api/admin/settings?token=${encodeURIComponent(adminToken)}`),
-        fetch(`/api/admin/stats?token=${encodeURIComponent(adminToken)}`),
-        fetch(`/api/admin/data?limit=25&token=${encodeURIComponent(adminToken)}`)
+        fetch(`/api/admin/stats?token=${encodeURIComponent(adminToken)}`)
       ]);
 
-      if (!settingsResponse.ok || !statsResponse.ok || !dataResponse.ok) {
+      if (!settingsResponse.ok || !statsResponse.ok) {
         throw new Error("Unauthorized");
       }
 
-      const [settingsData, statsData, tableData] = await Promise.all([
-        settingsResponse.json(),
-        statsResponse.json(),
-        dataResponse.json()
-      ]);
+      const [settingsData, statsData] = await Promise.all([settingsResponse.json(), statsResponse.json()]);
 
       setSettings(settingsData.settings);
       setStats(statsData);
-      setDataSnapshot(tableData.data);
+      await loadAdminTable(defaultResource, defaultOffset, true);
     } catch {
       setError("Admin data could not be loaded.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadAdminTable(resource, offset = 0, silent = false) {
+    if (!adminToken) {
+      return;
+    }
+
+    if (!silent) {
+      setTableLoading(true);
+    }
+
+    try {
+      const response = await fetch(
+        `/api/admin/data?resource=${encodeURIComponent(resource)}&limit=10&offset=${offset}&token=${encodeURIComponent(adminToken)}`
+      );
+
+      if (!response.ok) {
+        throw new Error("Table load failed");
+      }
+
+      const payload = await response.json();
+      setTableState(payload.data);
+    } catch {
+      setError("Admin table data could not be loaded.");
+    } finally {
+      if (!silent) {
+        setTableLoading(false);
+      }
     }
   }
 
@@ -107,7 +202,7 @@ function AdminPage({ navigate }) {
 
       const payload = await response.json();
       setSettings(payload.settings);
-      await loadAdminPanel();
+      await loadAdminPanel(tableState.resource, tableState.pagination?.offset ?? 0);
     } catch {
       setError("Security settings could not be saved.");
     } finally {
@@ -127,7 +222,11 @@ function AdminPage({ navigate }) {
             <LayoutPanelLeft size={18} />
             <span>Lab</span>
           </button>
-          <button className="admin-button" type="button" onClick={() => void loadAdminPanel()}>
+          <button
+            className="admin-button"
+            type="button"
+            onClick={() => void loadAdminPanel(tableState.resource, tableState.pagination?.offset ?? 0)}
+          >
             <RefreshCw size={18} />
             <span>Refresh</span>
           </button>
@@ -171,14 +270,22 @@ function AdminPage({ navigate }) {
           {activeTab === "users" ? (
             <TablePanel
               columns={["id", "username", "password", "role"]}
-              rows={dataSnapshot?.users ?? []}
+              loading={tableLoading}
+              pagination={tableState.pagination}
+              resource="users"
+              rows={tableState.resource === "users" ? tableState.rows : []}
+              onPageChange={loadAdminTable}
               title="Users"
             />
           ) : null}
           {activeTab === "comments" ? (
             <TablePanel
               columns={["id", "author", "content", "created_at"]}
-              rows={dataSnapshot?.comments ?? []}
+              loading={tableLoading}
+              pagination={tableState.pagination}
+              resource="comments"
+              rows={tableState.resource === "comments" ? tableState.rows : []}
+              onPageChange={loadAdminTable}
               title="Comments"
             />
           ) : null}
@@ -194,10 +301,15 @@ function AdminPage({ navigate }) {
                 "endpoint_time_ms",
                 "created_at"
               ]}
-              rows={dataSnapshot?.labLogs ?? []}
+              loading={tableLoading}
+              pagination={tableState.pagination}
+              resource="labLogs"
+              rows={tableState.resource === "labLogs" ? tableState.rows : []}
+              onPageChange={loadAdminTable}
               title="Attack logs"
             />
           ) : null}
+          {activeTab === "terminal" ? <TerminalPanel output={terminalOutput} /> : null}
         </>
       )}
     </main>
@@ -336,12 +448,35 @@ function Metric({ label, value }) {
   );
 }
 
-function TablePanel({ columns, rows, title }) {
+function TablePanel({ columns, rows, title, resource, pagination, onPageChange, loading }) {
   return (
     <section className="admin-panel">
       <div className="admin-card-head table-head">
         <Database size={18} />
         <h2>{title}</h2>
+      </div>
+      <div className="table-toolbar">
+        <p className="admin-muted">
+          {pagination ? `Page ${pagination.page} of ${pagination.pageCount} | ${pagination.total} records` : "Loading table metadata..."}
+        </p>
+        <div className="table-pagination">
+          <button
+            className="admin-button ghost"
+            disabled={!pagination?.hasPrevious || loading}
+            type="button"
+            onClick={() => onPageChange(resource, Math.max(0, (pagination?.offset ?? 0) - (pagination?.limit ?? 10)))}
+          >
+            Previous
+          </button>
+          <button
+            className="admin-button ghost"
+            disabled={!pagination?.hasNext || loading}
+            type="button"
+            onClick={() => onPageChange(resource, (pagination?.offset ?? 0) + (pagination?.limit ?? 10))}
+          >
+            Next
+          </button>
+        </div>
       </div>
       <div className="table-wrap">
         <table className="admin-table">
@@ -353,7 +488,13 @@ function TablePanel({ columns, rows, title }) {
             </tr>
           </thead>
           <tbody>
-            {rows.length ? (
+            {loading ? (
+              <tr>
+                <td className="empty-table" colSpan={columns.length}>
+                  Loading records...
+                </td>
+              </tr>
+            ) : rows.length ? (
               rows.map((row) => (
                 <tr key={`${title}-${row.id}`}>
                   {columns.map((column) => (
@@ -370,6 +511,30 @@ function TablePanel({ columns, rows, title }) {
             )}
           </tbody>
         </table>
+      </div>
+    </section>
+  );
+}
+
+function TerminalPanel({ output }) {
+  const terminalRef = useRef(null);
+
+  useEffect(() => {
+    if (!terminalRef.current) {
+      return;
+    }
+
+    terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+  }, [output]);
+
+  return (
+    <section className="admin-panel">
+      <div className="admin-card-head table-head">
+        <TerminalSquare size={18} />
+        <h2>Backend terminal</h2>
+      </div>
+      <div className="terminal-panel" ref={terminalRef}>
+        <pre>{output}</pre>
       </div>
     </section>
   );

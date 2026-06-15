@@ -5,14 +5,22 @@ services:
     container_name: huit-cybersecurity-backend
     env_file:
       - ./.env
+    command:
+      - /bin/sh
+      - -c
+      - |
+        mkdir -p /app/data
+        : > /app/data/backend-terminal.log
+        uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app 2>&1 | tee -a /app/data/backend-terminal.log
     environment:
       LAB_MODE: vulnerable
       BLOCK_THRESHOLD: "0.85"
-      DATABASE_PATH: /workspace-data/lab.sqlite
+      DATABASE_PATH: /app/data/lab.sqlite
+      BACKEND_TERMINAL_LOG_PATH: /app/data/backend-terminal.log
     ports:
       - "8000:8000"
     volumes:
-      - ./backend/data:/workspace-data
+      - ./backend:/app
 
   frontend:
     build:
@@ -24,5 +32,8 @@ services:
       VITE_API_PROXY_TARGET: http://backend:8000
     ports:
       - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
     depends_on:
       - backend

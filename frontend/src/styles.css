@@ -36,10 +36,6 @@ textarea {
 }
 
 .route-button {
-  position: absolute;
-  top: 1rem;
-  right: 1rem;
-  z-index: 2;
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
@@ -49,6 +45,15 @@ textarea {
   background: rgba(255, 255, 255, 0.74);
   color: var(--jade-900);
   box-shadow: 0 10px 26px rgba(34, 167, 129, 0.1);
+}
+
+.route-stack {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 2;
+  display: flex;
+  gap: 0.75rem;
 }
 
 .shell {
@@ -231,6 +236,129 @@ textarea {
   color: #183b33;
 }
 
+.classic-shell {
+  min-height: 100vh;
+  padding: 1.5rem;
+  background: linear-gradient(180deg, #f9f9f9 0%, #efefef 100%);
+  color: #202020;
+}
+
+.classic-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.classic-kicker {
+  margin: 0 0 0.5rem;
+  color: #4a4a4a;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.78rem;
+}
+
+.classic-topbar h1,
+.classic-head h2 {
+  margin: 0;
+}
+
+.classic-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.classic-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+}
+
+.classic-panel {
+  padding: 1.25rem;
+  border: 1px solid #d7d7d7;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.06);
+}
+
+.classic-head {
+  margin-bottom: 1rem;
+}
+
+.classic-head p {
+  margin: 0.45rem 0 0;
+  color: #616161;
+}
+
+.classic-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.classic-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: #2b2b2b;
+}
+
+.classic-input,
+.classic-textarea {
+  width: 100%;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid #c9c9c9;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #111111;
+  font: inherit;
+}
+
+.classic-textarea {
+  resize: vertical;
+}
+
+.classic-submit {
+  align-self: flex-start;
+  padding: 0.78rem 1.1rem;
+  border: 1px solid #bdbdbd;
+  border-radius: 6px;
+  background: #f6f6f6;
+  color: #202020;
+  font-weight: 600;
+}
+
+.classic-console {
+  margin-top: 1rem;
+  border: 1px solid #d5d5d5;
+  border-radius: 6px;
+  background: #fdfdfd;
+}
+
+.classic-console-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.7rem 0.85rem;
+  border-bottom: 1px solid #e3e3e3;
+  color: #444444;
+}
+
+.classic-console pre {
+  margin: 0;
+  padding: 0.9rem;
+  min-height: 14rem;
+  max-height: 24rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: "IBM Plex Mono", "Consolas", monospace;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
 .admin-topbar {
   display: flex;
   justify-content: space-between;
@@ -400,6 +528,39 @@ textarea {
   overflow-x: auto;
 }
 
+.table-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.table-pagination {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.terminal-panel {
+  min-height: 28rem;
+  max-height: 60vh;
+  padding: 1rem;
+  overflow-y: auto;
+  border: 1px solid #e4f0eb;
+  border-radius: 16px;
+  background: #fcfffe;
+}
+
+.terminal-panel pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: "IBM Plex Mono", "Consolas", monospace;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: #1a4037;
+}
+
 .admin-table {
   width: 100%;
   border-collapse: collapse;
@@ -483,8 +644,15 @@ textarea {
 
 @media (max-width: 720px) {
   .route-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .route-stack {
     top: 0.75rem;
     right: 0.75rem;
+    left: 0.75rem;
+    flex-direction: column;
   }
 
   .shell {
@@ -535,14 +703,26 @@ textarea {
     padding: 1rem;
   }
 
+  .classic-shell {
+    padding: 1rem;
+  }
+
   .admin-topbar,
-  .toggle-row {
+  .toggle-row,
+  .classic-topbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .table-toolbar,
+  .table-pagination {
     flex-direction: column;
     align-items: stretch;
   }
 
   .admin-grid,
-  .metric-grid {
+  .metric-grid,
+  .classic-grid {
     grid-template-columns: 1fr;
   }
 }

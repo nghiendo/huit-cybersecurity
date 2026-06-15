@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import AdminPage from "./AdminPage";
 import LabPage from "./LabPage";
+import PracticePage from "./PracticePage";
 
 function App() {
   const [route, setRoute] = useState(resolveRoute(window.location.pathname));
@@ -31,11 +32,21 @@ function App() {
     return <AdminPage navigate={navigate} />;
   }
 
+  if (route === "practice") {
+    return <PracticePage navigate={navigate} />;
+  }
+
   return <LabPage navigate={navigate} />;
 }
 
 function resolveRoute(pathname) {
-  return pathname === "/admin" ? "admin" : "lab";
+  if (pathname === "/admin") {
+    return "admin";
+  }
+  if (pathname === "/practice") {
+    return "practice";
+  }
+  return "lab";
 }
 
 export default App;

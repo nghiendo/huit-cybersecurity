@@ -34,6 +34,7 @@ class Settings:
     block_threshold: float
     database_path: Path
     admin_token: str
+    backend_terminal_log_path: Path
 
 
 settings = Settings(
@@ -46,4 +47,10 @@ settings = Settings(
         )
     ),
     admin_token=get_env("ADMIN_TOKEN", "lab-admin-token"),
+    backend_terminal_log_path=Path(
+        get_env(
+            "BACKEND_TERMINAL_LOG_PATH",
+            str(Path(__file__).resolve().parents[1] / "data" / "backend-terminal.log"),
+        )
+    ),
 )

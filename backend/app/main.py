@@ -1,6 +1,6 @@
 from time import perf_counter
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from app.config import settings
@@ -9,13 +9,15 @@ from app.middleware import ModelMiddleware
 from app.runtime import runtime_security
 from app.services import (
     append_comment,
-    fetch_admin_data,
+    fetch_admin_table,
+    read_terminal_log_tail,
     simulate_sql_analysis,
     simulate_xss_analysis,
     summarize_admin_data,
     write_lab_log,
 )
 from app.stats import stats
+from app.terminal_live import terminal_broadcaster
 
 
 class LabRequest(BaseModel):
@@ -40,6 +42,9 @@ app.add_middleware(ModelMiddleware)
 def startup() -> None:
     init_db()
     stats.replace(summarize_admin_data()["attackSummary"])
+    settings.backend_terminal_log_path.parent.mkdir(parents=True, exist_ok=True)
+    settings.backend_terminal_log_path.touch(exist_ok=True)
+    terminal_broadcaster.install()
 
 
 def verify_admin_token(token: str | None = Query(default=None)) -> str:
@@ -134,8 +139,41 @@ def admin_stats(_: str = Depends(verify_admin_token)) -> dict:
 
 
 @app.get("/api/admin/data")
-def admin_data(limit: int = 50, _: str = Depends(verify_admin_token)) -> dict:
+def admin_data(
+    resource: str = Query(...),
+    limit: int = Query(default=25, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    _: str = Depends(verify_admin_token),
+) -> dict:
     return {
         "ok": True,
-        "data": fetch_admin_data(limit=limit),
+        "data": fetch_admin_table(resource=resource, limit=limit, offset=offset),
     }
+
+
+@app.get("/api/admin/terminal")
+def admin_terminal_snapshot(_: str = Depends(verify_admin_token)) -> dict:
+    return {
+        "ok": True,
+        "output": terminal_broadcaster.history() or read_terminal_log_tail(settings.backend_terminal_log_path),
+    }
+
+
+@app.websocket("/api/admin/terminal-ws")
+async def admin_terminal_ws(websocket: WebSocket) -> None:
+    token = websocket.query_params.get("token")
+    if token != settings.admin_token:
+        await websocket.close(code=1008)
+        return
+
+    await websocket.accept()
+    queue = await terminal_broadcaster.subscribe()
+
+    try:
+        while True:
+            line = await queue.get()
+            await websocket.send_text(line)
+    except WebSocketDisconnect:
+        terminal_broadcaster.unsubscribe(queue)
+    finally:
+        terminal_broadcaster.unsubscribe(queue)

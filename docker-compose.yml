@@ -1,0 +1,28 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: huit-cybersecurity-backend
+    env_file:
+      - ./.env
+    environment:
+      LAB_MODE: vulnerable
+      BLOCK_THRESHOLD: "0.85"
+      DATABASE_PATH: /workspace-data/lab.sqlite
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/data:/workspace-data
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: huit-cybersecurity-frontend
+    environment:
+      VITE_HOST: 0.0.0.0
+      VITE_PORT: "5173"
+      VITE_API_PROXY_TARGET: http://backend:8000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend

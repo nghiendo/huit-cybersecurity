@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Các thuật toán sử dụng trong project Web Attack Detection</title>
+  <style>
+    body {
+      font-family: "Times New Roman", serif;
+      line-height: 1.65;
+      color: #111;
+      background: #fff;
+      margin: 0;
+      padding: 0;
+    }
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 32px 24px 64px;
+    }
+    h1, h2, h3 {
+      color: #000;
+      margin-top: 1.4em;
+    }
+    h1 {
+      font-size: 2rem;
+      border-bottom: 2px solid #222;
+      padding-bottom: 8px;
+    }
+    h2 {
+      font-size: 1.5rem;
+      border-left: 5px solid #333;
+      padding-left: 10px;
+    }
+    h3 {
+      font-size: 1.15rem;
+    }
+    p, li {
+      font-size: 1rem;
+    }
+    code {
+      background: #f4f4f4;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 0.95rem;
+    }
+    .box {
+      border: 1px solid #ccc;
+      padding: 14px 16px;
+      margin: 16px 0;
+      background: #fafafa;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin: 16px 0;
+    }
+    .card {
+      border: 1px solid #ccc;
+      padding: 14px;
+      background: #fff;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 18px 0;
+    }
+    th, td {
+      border: 1px solid #888;
+      padding: 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #efefef;
+    }
+    .muted {
+      color: #444;
+    }
+    ul, ol {
+      margin-top: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Các thuật toán sử dụng trong project Web Attack Detection</h1>
+
+    <h2>1. Mục tiêu của project</h2>
+    <p>Project xây dựng pipeline phân loại request hoặc payload web thành 4 lớp:</p>
+    <ul>
+      <li>Normal</li>
+      <li>SQLi</li>
+      <li>XSS</li>
+      <li>OtherWebAttack</li>
+    </ul>
+    <p>Notebook chính kết hợp nhiều nhóm thuật toán theo chuỗi: đọc dữ liệu, làm sạch, trích xuất đặc trưng, xử lý mất cân bằng, huấn luyện nhiều mô hình, chọn mô hình tốt nhất bằng validation, rồi đánh giá cuối trên test set.</p>
+
+    <h2>2. Quy trình tổng thể</h2>
+    <div class="box">
+      <ol>
+        <li>Đọc nhiều nguồn dữ liệu web attack</li>
+        <li>Chuẩn hóa text và cột dữ liệu</li>
+        <li>Trích xuất đặc trưng số từ payload HTTP</li>
+        <li>Loại conflict label và loại bản ghi trùng</li>
+        <li>Chia train / validation / test</li>
+        <li>Balance train bằng oversampling</li>
+        <li>Train 6 mô hình</li>
+        <li>Chọn best model bằng validation</li>
+        <li>Train lại trên train + validation</li>
+        <li>Đánh giá cuối trên test</li>
+      </ol>
+    </div>
+
+    <h2>3. Thuật toán đọc và chuẩn hóa dữ liệu</h2>
+
+    <h3>3.1. Đọc dữ liệu từ nhiều nguồn</h3>
+    <p>Project dùng hai hàm chính:</p>
+    <ul>
+      <li><code>load_csic_dataset(...)</code></li>
+      <li><code>load_payload_dataset(...)</code></li>
+    </ul>
+    <p>Các nguồn hiện có:</p>
+    <ul>
+      <li>CSIC 2010</li>
+      <li>SQLi Extended</li>
+      <li>SQLi</li>
+      <li>SQLi V2</li>
+      <li>SQLi V3</li>
+      <li>XSS dataset</li>
+    </ul>
+    <p>Mục tiêu của bước này là quy toàn bộ dữ liệu về một schema thống nhất gồm <code>source</code>, <code>raw_text</code>, <code>label_binary</code>, <code>label_multiclass</code> và nhóm numeric features.</p>
+
+    <h3>3.2. Làm sạch text bằng normalize_text</h3>
+    <p>Hàm <code>normalize_text(...)</code> thực hiện:</p>
+    <ol>
+      <li>ép giá trị về string</li>
+      <li>thay null byte <code>\x00</code></li>
+      <li>loại control characters</li>
+      <li>thay newline, tab bằng khoảng trắng</li>
+      <li>gộp nhiều khoảng trắng liên tiếp</li>
+      <li>trim đầu cuối</li>
+      <li>đưa về chữ thường</li>
+    </ol>
+    <p>Kết quả là text đầu vào ổn định hơn cho TF-IDF, deep model và bước dedup.</p>
+
+    <h3>3.3. Đọc CSV robust</h3>
+    <p>Hàm <code>read_csv_robust(...)</code> thử nhiều cấu hình đọc file:</p>
+    <ul>
+      <li>encoding: <code>utf-8-sig</code>, <code>utf-16</code>, <code>utf-16-le</code>, <code>utf-16-be</code>, <code>latin1</code></li>
+      <li>separator: <code>,</code> hoặc <code>\t</code></li>
+    </ul>
+    <p>Sau đó project làm sạch header bằng:</p>
+    <ul>
+      <li><code>clean_column_name(...)</code></li>
+      <li><code>make_unique(...)</code></li>
+      <li><code>clean_dataframe(...)</code></li>
+    </ul>
+    <p>Điểm mạnh của thuật toán này là chịu lỗi tốt với các file dữ liệu gốc không đồng nhất về encoding và header.</p>
+
+    <h3>3.4. Quy đổi nhãn về 4 lớp</h3>
+    <p>Project dùng <code>parse_binary_label(...)</code> để nhận diện dòng dữ liệu là normal hay attack, rồi ánh xạ sang multiclass:</p>
+    <ul>
+      <li>Normal nếu benign hoặc normal</li>
+      <li>SQLi nếu đến từ các nguồn SQL injection</li>
+      <li>XSS nếu đến từ nguồn XSS</li>
+      <li>OtherWebAttack nếu là attack từ CSIC</li>
+    </ul>
+
+    <h2>4. Thuật toán trích xuất đặc trưng số</h2>
+    <p>Hàm trung tâm là <code>extract_http_features(...)</code>.</p>
+    <p>Project tạo các đặc trưng như:</p>
+    <div class="grid">
+      <div class="card">
+        <strong>Độ dài và tỷ lệ</strong>
+        <ul>
+          <li>text_length</li>
+          <li>raw_length</li>
+          <li>length_delta</li>
+          <li>special_char_ratio</li>
+          <li>digit_ratio</li>
+          <li>letter_ratio</li>
+        </ul>
+      </div>
+      <div class="card">
+        <strong>Dấu ký hiệu nghi vấn</strong>
+        <ul>
+          <li>số dấu <code>?</code>, <code>&amp;</code>, <code>=</code></li>
+          <li>quote, semicolon, dash</li>
+          <li>angle brackets</li>
+          <li>parenthesis</li>
+          <li>slash, percent</li>
+        </ul>
+      </div>
+      <div class="card">
+        <strong>Tín hiệu an ninh web</strong>
+        <ul>
+          <li>encoding markers</li>
+          <li>HTTP method</li>
+          <li>SQL keywords</li>
+          <li>script keywords</li>
+          <li>command keywords</li>
+          <li>traversal patterns</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>Step-by-step</h3>
+    <ol>
+      <li>nhận chuỗi đầu vào</li>
+      <li>chuẩn hóa bằng <code>normalize_text(...)</code></li>
+      <li>đếm dấu hiệu cú pháp và từ khóa</li>
+      <li>tính ratio cho một số thuộc tính</li>
+      <li>trả về dictionary numeric feature</li>
+    </ol>
+
+    <h2>5. Thuật toán chống duplicate và leakage</h2>
+
+    <h3>5.1. Tạo hash</h3>
+    <p>Project dùng <code>sha256_text(...)</code> để tạo <code>text_hash</code> từ <code>normalized_text</code>.</p>
+
+    <h3>5.2. Loại conflict label</h3>
+    <ol>
+      <li>group theo <code>text_hash</code></li>
+      <li>tìm những hash có nhiều hơn một <code>label_multiclass</code></li>
+      <li>loại toàn bộ các bản ghi conflict</li>
+    </ol>
+
+    <h3>5.3. Deduplicate</h3>
+    <ol>
+      <li>sau khi bỏ conflict, project gọi <code>drop_duplicates</code> theo <code>text_hash</code></li>
+      <li>giữ lại một bản ghi đầu tiên</li>
+    </ol>
+
+    <p>Mục tiêu là tránh cùng một payload đi vào nhiều split hoặc tạo nhãn mâu thuẫn cho mô hình.</p>
+
+    <h2>6. Thuật toán chia dữ liệu</h2>
+    <p>Project dùng <code>train_test_split(...)</code> với stratification theo <code>label_multiclass</code>.</p>
+    <ol>
+      <li>chia <code>data</code> thành <code>train_df</code> và <code>temp_df</code> với <code>test_size=0.30</code></li>
+      <li>chia tiếp <code>temp_df</code> thành <code>val_df</code> và <code>test_df</code> với <code>test_size=0.50</code></li>
+      <li>kiểm tra overlap hash giữa train, validation và test</li>
+      <li>assert rằng số lượng overlap bằng 0</li>
+    </ol>
+    <p>Tỷ lệ cuối cùng là:</p>
+    <ul>
+      <li>Train: 70%</li>
+      <li>Validation: 15%</li>
+      <li>Test: 15%</li>
+    </ul>
+
+    <h2>7. Thuật toán xử lý mất cân bằng lớp</h2>
+    <p>Project dùng random oversampling trong <code>make_balanced_training_frame(...)</code>.</p>
+    <h3>Step-by-step</h3>
+    <ol>
+      <li>đếm số lượng mẫu mỗi lớp</li>
+      <li>chọn kích thước lớp lớn nhất làm <code>target_size</code></li>
+      <li>duyệt từng lớp</li>
+      <li>nếu lớp nhỏ hơn target thì lấy mẫu lặp lại bằng <code>resample(..., replace=True)</code></li>
+      <li>nối tất cả nhóm lại</li>
+      <li>shuffle toàn bộ train đã balance</li>
+    </ol>
+    <p>Validation và test không được oversample để giữ đánh giá khách quan.</p>
+
+    <h2>8. Các mô hình học máy sử dụng trong project</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Mô hình</th>
+          <th>Input</th>
+          <th>Nhóm thuật toán</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>TF-IDF + Logistic Regression</td>
+          <td>Text</td>
+          <td>Classical NLP</td>
+        </tr>
+        <tr>
+          <td>TF-IDF + Linear SVC</td>
+          <td>Text</td>
+          <td>Classical NLP</td>
+        </tr>
+        <tr>
+          <td>Random Forest trên statistical features</td>
+          <td>Numeric</td>
+          <td>Tree-based ML</td>
+        </tr>
+        <tr>
+          <td>Multi-view TF-IDF + stats + Logistic Regression</td>
+          <td>Text + Numeric</td>
+          <td>Hybrid classical</td>
+        </tr>
+        <tr>
+          <td>CNN + BiLSTM</td>
+          <td>Text</td>
+          <td>Deep learning</td>
+        </tr>
+        <tr>
+          <td>Multi-view CNN-BiLSTM + stats branch</td>
+          <td>Text + Numeric</td>
+          <td>Hybrid deep learning</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>9. Mô hình 1: TF-IDF + Logistic Regression</h2>
+    <p>Tên model: <code>logistic_regression_tfidf</code></p>
+    <div class="box">
+      <p><strong>Thành phần:</strong></p>
+      <ul>
+        <li><code>TfidfVectorizer(analyzer='char_wb', ngram_range=(3, 5), min_df=2, max_features=100000)</code></li>
+        <li><code>LogisticRegression(max_iter=1000, class_weight='balanced')</code></li>
+      </ul>
+    </div>
+    <h3>Step-by-step</h3>
+    <ol>
+      <li>lấy cột <code>normalized_text</code></li>
+      <li>biểu diễn text bằng TF-IDF trên character n-gram 3 đến 5</li>
+      <li>tạo ma trận đặc trưng sparse</li>
+      <li>Logistic Regression học trọng số cho từng lớp</li>
+      <li>chọn lớp có điểm cao nhất để dự đoán</li>
+    </ol>
+    <p>Character n-gram giúp bắt tốt các pattern như <code>' or 1=1</code>, <code>&lt;script&gt;</code>, chuỗi encode và ký hiệu bất thường.</p>
+
+    <h2>10. Mô hình 2: TF-IDF + Linear SVC</h2>
+    <p>Tên model: <code>linear_svm_tfidf</code></p>
+    <div class="box">
+      <p><strong>Thành phần:</strong></p>
+      <ul>
+        <li><code>TfidfVectorizer(analyzer='char_wb', ngram_range=(3, 5), min_df=2, max_features=120000)</code></li>
+        <li><code>LinearSVC(class_weight='balanced')</code></li>
+      </ul>
+    </div>
+    <h3>Step-by-step</h3>
+    <ol>
+      <li>vector hóa text bằng TF-IDF</li>
+      <li>xây dựng siêu phẳng tuyến tính phân tách các lớp</li>
+      <li>so sánh decision score để chọn nhãn</li>
+    </ol>
+    <p>Linear SVC phù hợp với không gian đặc trưng lớn và thưa, rất phổ biến trong text classification.</p>
+
+    <h2>11. Mô hình 3: Statistical Features + Random Forest</h2>
+    <p>Tên model: <code>statistical_features_random_forest</code></p>
+    <div class="box">
+      <p><strong>Thành phần:</strong></p>
+      <ul>
+        <li><code>StandardScaler()</code></li>
+        <li><code>RandomForestClassifier(n_estimators=300, class_weight='balanced_subsample', n_jobs=-1)</code></li>
+      </ul>
+    </div>
+    <h3>Step-by-step</h3>
+    <ol>
+      <li>lấy toàn bộ <code>NUMERIC_FEATURE_COLS</code></li>
+      <li>điền giá trị thiếu bằng 0</li>
+      <li>scale dữ liệu số</li>
+      <li>huấn luyện nhiều cây quyết định</li>
+      <li>gộp kết quả bỏ phiếu để ra nhãn cuối</li>
+    </ol>
+    <p>Mô hình này đặc biệt tận dụng các heuristic security signals thay vì đọc text trực tiếp.</p>
+
+    <h2>12. Mô hình 4: Multi-view TF-IDF + Stats + Logistic Regression</h2>
+    <p>Tên model: <code>multiview_tfidf_stats_logistic_regression</code></p>
+    <div class="box">
+      <p><strong>Thành phần:</strong></p>
+      <ul>
+        <li><code>ColumnTransformer</code></li>
+        <li>nhánh text: <code>TfidfVectorizer(...)</code></li>
+        <li>nhánh numeric: <code>StandardScaler()</code></li>
+        <li><code>LogisticRegression(...)</code></li>
+      </ul>
+    </div>
+    <h3>Step-by-step</h3>
+    <ol>
+      <li>chuẩn bị input gồm text và numeric features</li>
+      <li>xử lý text và numeric theo hai nhánh riêng</li>
+      <li>ghép hai loại đặc trưng bằng <code>ColumnTransformer</code></li>
+      <li>huấn luyện Logistic Regression trên vector hợp nhất</li>
+    </ol>
+    <p>Đây là mô hình hybrid classical kết hợp nội dung payload và đặc trưng cấu trúc.</p>
+
+    <h2>13. Mô hình 5: CNN + BiLSTM cho text</h2>
+    <p>Tên model: <code>cnn_bilstm_text</code></p>
+    <div class="box">
+      <p><strong>Kiến trúc:</strong></p>
+      <ol>
+        <li><code>TextVectorization</code></li>
+        <li><code>Embedding(50000, 64)</code></li>
+        <li><code>Conv1D(96, kernel_size=5, relu)</code></li>
+        <li><code>MaxPooling1D(2)</code></li>
+        <li><code>Bidirectional(LSTM(64))</code></li>
+        <li><code>Dropout(0.35)</code></li>
+        <li><code>Dense(64, relu)</code></li>
+        <li><code>Dropout(0.25)</code></li>
+        <li><code>Dense(num_classes, softmax)</code></li>
+      </ol>
+    </div>
+    <h3>Step-by-step</h3>
+    <ol>
+      <li>mã hóa nhãn bằng <code>LabelEncoder</code></li>
+      <li>học vocabulary bằng <code>TextVectorization.adapt(...)</code></li>
+      <li>chuyển text thành chuỗi token id có chiều dài cố định</li>
+      <li>dùng embedding để học vector dense</li>
+      <li>dùng <code>Conv1D</code> để học local patterns</li>
+      <li>dùng <code>BiLSTM</code> để học ngữ cảnh theo thứ tự</li>
+      <li>softmax tạo xác suất cho 4 lớp</li>
+      <li>huấn luyện bằng Adam và dừng sớm theo <code>val_loss</code></li>
+    </ol>
+
+    <h2>14. Mô hình 6: Multi-view CNN-BiLSTM + Stats Branch</h2>
+    <p>Tên model: <code>multiview_cnn_bilstm_text_stats</code></p>
+    <div class="box">
+      <p><strong>Nhánh text:</strong> TextVectorization → Embedding → Conv1D → MaxPooling1D → BiLSTM → Dropout</p>
+      <p><strong>Nhánh numeric:</strong> StandardScaler → Dense(64) → Dropout → Dense(32)</p>
+      <p><strong>Hợp nhất:</strong> Concatenate → Dense(96) → Dropout → Softmax</p>
+    </div>
+    <h3>Step-by-step</h3>
+    <ol>
+      <li>encode nhãn bằng <code>LabelEncoder</code></li>
+      <li>scale numeric features</li>
+      <li>vectorize text</li>
+      <li>text branch học đặc trưng tuần tự từ payload</li>
+      <li>numeric branch học từ heuristic features</li>
+      <li>nối hai vector biểu diễn</li>
+      <li>dense layers học tương tác giữa hai view</li>
+      <li>softmax xuất ra phân loại cuối</li>
+    </ol>
+    <p>Đây là mô hình tổng hợp mạnh nhất về mặt ý tưởng vì nó kết hợp text raw và tín hiệu thống kê.</p>
+
+    <h2>15. Thuật toán đánh giá mô hình</h2>
+    <p>Project dùng hai helper:</p>
+    <ul>
+      <li><code>evaluate_frame(...)</code> cho classical model</li>
+      <li><code>evaluate_deep_predictions(...)</code> cho deep model</li>
+    </ul>
+    <p>Các chỉ số chính:</p>
+    <ul>
+      <li>Accuracy</li>
+      <li>F1 macro</li>
+      <li>F1 weighted</li>
+    </ul>
+    <p><strong>F1 macro</strong> là chỉ số quan trọng nhất vì bài toán có mất cân bằng lớp.</p>
+
+    <h2>16. Thuật toán chọn best model</h2>
+    <p>Sau khi train toàn bộ mô hình, project tạo <code>validation_table</code> và sắp xếp theo:</p>
+    <ol>
+      <li><code>f1_macro</code> giảm dần</li>
+      <li>nếu bằng nhau thì <code>accuracy</code> giảm dần</li>
+    </ol>
+    <p>Mô hình đứng đầu được gán cho <code>best_model_name</code>.</p>
+
+    <h2>17. Thuật toán final training trước khi test</h2>
+    <ol>
+      <li>gộp <code>train_df</code> và <code>val_df</code> thành <code>trainval_df</code></li>
+      <li>rebalance lại thành <code>trainval_balanced_df</code></li>
+      <li>lấy <code>best_model_name</code></li>
+      <li>train lại mô hình tốt nhất trên train + validation</li>
+      <li>dự đoán trên <code>test_df</code></li>
+      <li>in <code>classification_report</code> và vẽ <code>confusion_matrix</code></li>
+    </ol>
+
+    <h2>18. Kết luận</h2>
+    <p>Project này là một pipeline nhiều tầng, không phải chỉ một mô hình đơn lẻ. Ba ý tưởng cốt lõi nhất là:</p>
+    <ul>
+      <li>biểu diễn text bằng character-level TF-IDF hoặc deep sequence model</li>
+      <li>trích xuất handcrafted HTTP/security features</li>
+      <li>multi-view learning kết hợp text và numeric signals</li>
+    </ul>
+    <p class="muted">Tóm lại, hệ thống kết hợp cả tri thức thủ công về security pattern lẫn khả năng học tự động của machine learning và deep learning để phân loại payload web attack.</p>
+  </div>
+</body>
+</html>
